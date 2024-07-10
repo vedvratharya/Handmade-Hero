@@ -1,6 +1,7 @@
 #include <Windows.h>
 #include <stdint.h>
 #include <Xinput.h>
+#include <stdio.h>
 #include <dsound.h>
 
 // TODO: Implement sine ourselves
@@ -465,6 +466,11 @@ WinMain(
 	int ShowCode)
 {
 //		MessageBoxA(0, "This is Handmade Hero.", "Handmade Hero", MB_OK | MB_ICONINFORMATION); // Sample Message Box
+	
+	LARGE_INTEGER PerfCountFrequencyResult;
+	QueryPerformanceFrequency(&PerfCountFrequencyResult);
+	int64 PerfCountFrequency = PerfCountFrequencyResult.QuadPart;
+
 	Win32LoadXInput();
 
 	WNDCLASSA WindowClass = {};
@@ -476,7 +482,8 @@ WinMain(
 	WindowClass.hInstance = Instance;
 //		WindowClass.hIcon;
 	WindowClass.lpszClassName = "HandmadeHeroWindowClass";
-	if (RegisterClass(&WindowClass))
+
+	if (RegisterClassA(&WindowClass))
 	{
 		HWND Window = 
 			CreateWindowExA(
@@ -518,8 +525,15 @@ WinMain(
 			GlobalSecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
 			
 			GlobalRunning = true;
+
+			uint64 LastCycleCount = __rdtsc();
+
+			LARGE_INTEGER LastCounter;
+			QueryPerformanceCounter(&LastCounter);
+
 			while(GlobalRunning)
 			{
+
 				MSG Message;
 
 				while (PeekMessageA(&Message, 0, 0, 0, PM_REMOVE))
@@ -615,6 +629,25 @@ WinMain(
 				Win32DisplayBufferInWindow(&GlobalBackBuffer, DeviceContext, 
 											Dimension.Width, Dimension.Height);
 				// ReleaseDC(Window, DeviceContext); Check declaration above
+
+				uint64 EndCycleCount = __rdtsc();
+
+				LARGE_INTEGER EndCounter;
+				QueryPerformanceCounter(&EndCounter);
+
+				// TODO: Display the value here
+				uint64 CyclesElapsed = EndCycleCount - LastCycleCount;
+				int64 CounterElapsed = EndCounter.QuadPart - LastCounter.QuadPart;
+				real64 MSPerFrame = ((1000.0f * (real64)CounterElapsed) / (real64)PerfCountFrequency);
+				real64 FPS = ((real64)PerfCountFrequency / (real64)CounterElapsed);
+				real64 MCPF = ((real64)CyclesElapsed / (1000.0f * 1000.0f));
+
+				char Buffer[256];
+				sprintf(Buffer, "%.02fms/f, %.02ff/s, %.02fmc/f\n", MSPerFrame, FPS, MCPF); 
+				OutputDebugStringA(Buffer);
+
+				LastCounter = EndCounter;
+				LastCycleCount = EndCycleCount;
 			}
 		}
 		else
