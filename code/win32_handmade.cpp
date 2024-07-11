@@ -1,11 +1,25 @@
-#include <Windows.h>
-#include <stdint.h>
-#include <Xinput.h>
-#include <stdio.h>
-#include <dsound.h>
+/*
+ TODO: THIS IS NOT A FINAL PLATFORM LAYER!!!
 
-// TODO: Implement sine ourselves
-#include <math.h>
+ - Save game locations
+ - Getting a handle to our own executable
+ - Asset loading path
+ - Threading (launch a thread)
+ - Raw Input (support for multiple keyboards)
+ - Sleep/timeBeginPeriod
+ - ClipCursor() (for multimonitor support)
+ - Fullscreen support
+ - WM_SETCURSOR (control cursor visibility)
+ - QueryCancelAutoplay
+ - WM_ACTIVATEAPP (for when we are not the active application)
+ - Blit speed improvements (BitBlt)
+ - Hardware acceleration (OpenGL or Direct3D or BOTH??)
+ - GetKeyboardInput (for French keyboards, international WASD support)
+
+ Just a partial list of stuff!!
+*/
+
+#include <stdint.h>
 
 // define to keep track of static variables using the name.
 #define internal static
@@ -28,14 +42,24 @@ typedef uint64_t uint64;
 typedef float real32;
 typedef double real64;
 
+#include "handmade.cpp"
+
+#include <Windows.h>
+#include <Xinput.h>
+#include <stdio.h>
+#include <dsound.h>
+
+// TODO: Implement sine ourselves
+#include <math.h>
+
 struct win32_offscreen_buffer
 {
+	// NOTE: Pixels are always 32-bits wide, Memory Order BB GG RR XX
 	BITMAPINFO Info;
 	void* Memory;
 	int Width;
 	int Height;
 	int Pitch;
-	int BytesPerPixel;
 };
 
 struct win32_window_dimension
@@ -184,39 +208,6 @@ Win32GetWindowDimension(HWND Window)
 	return(Result);
 }
 
-internal void
-RenderWeirdGradient(win32_offscreen_buffer *Buffer, int BlueOffset, int GreenOffset)
-{
-	// TODO: Let's see what the optimizer does
-
-	uint8* Row = (uint8*)Buffer->Memory;
-	for (int Y = 0;
-		Y < Buffer->Height;
-		++Y)
-	{
-		uint32* Pixel = (uint32*)Row;
-		for (int X = 0;
-			X < Buffer->Width;
-			++X)
-		{
-			// This is BLUE
-			uint8 Blue = (X + BlueOffset);
-			uint8 Green = (Y + GreenOffset);
-
-			/*
-				Memory:		BB GG RR xx
-				Register:	xx RR GG BB
-
-				Pixel (32-bits)
-			*/
-
-			*Pixel++ = ((Green << 8) | Blue);
-		}
-		Row += Buffer->Pitch;
-	}
-}
-
-//Renaming all names with Win32 to avoid confusion with Windows actual function names.
 internal void 
 Win32ResizeDIBSection(win32_offscreen_buffer *Buffer, int Width, int Height)
 {
@@ -230,7 +221,8 @@ Win32ResizeDIBSection(win32_offscreen_buffer *Buffer, int Width, int Height)
 
 	Buffer->Width = Width;
 	Buffer->Height = Height;
-	Buffer->BytesPerPixel = 4;
+	
+	int BytesPerPixel = 4;
 
 	// NOTE: When the biHeight field is negative, this is the clue to Windows
 	// to treat this bitmap as top-down, not bottom-up, meaning that the first
@@ -244,9 +236,9 @@ Win32ResizeDIBSection(win32_offscreen_buffer *Buffer, int Width, int Height)
 	Buffer->Info.bmiHeader.biCompression = BI_RGB;
 
 	// NOTE: No more DC
-	int BitmapMemorySize = (Buffer->Width * Buffer->Height) * Buffer->BytesPerPixel;
+	int BitmapMemorySize = (Buffer->Width * Buffer->Height) * BytesPerPixel;
 	Buffer->Memory = VirtualAlloc(0, BitmapMemorySize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-	Buffer->Pitch = Width * Buffer->BytesPerPixel;
+	Buffer->Pitch = Width * BytesPerPixel;
 
 	// TODO: Probably clear this to black
 }
@@ -412,7 +404,6 @@ internal void
 Win32FillSoundBuffer(win32_sound_output* SoundOutput, DWORD ByteToLock, DWORD BytesToWrite)
 {
 	// TODO: More streneius test!
-	// TODO: Switch to a sine wave
 	VOID* Region1;
 	DWORD Region1Size;
 	VOID* Region2;
@@ -473,11 +464,12 @@ WinMain(
 
 	Win32LoadXInput();
 
+	// NOTE: This is for opening a window
 	WNDCLASSA WindowClass = {};
 
 	Win32ResizeDIBSection(&GlobalBackBuffer, 1280, 720);
 
-	WindowClass.style = CS_HREDRAW|CS_VREDRAW;
+	WindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
 	WindowClass.lpfnWndProc = Win32MainWindowCallback;
 	WindowClass.hInstance = Instance;
 //		WindowClass.hIcon;
@@ -597,7 +589,14 @@ WinMain(
 				XInputSetState(0, &Vibration);
 				*/
 
-				RenderWeirdGradient(&GlobalBackBuffer, XOffset, YOffset);
+				game_offscreen_buffer Buffer = {};
+				Buffer.Memory = GlobalBackBuffer.Memory;
+				Buffer.Width = GlobalBackBuffer.Width;
+				Buffer.Height = GlobalBackBuffer.Height;
+				Buffer.Pitch = GlobalBackBuffer.Pitch;
+
+				GameUpdateAndRender(&Buffer, XOffset, YOffset);
+			//	RenderWeirdGradient(&GlobalBackBuffer, XOffset, YOffset);
 
 				// NOTE: DirectSound output test
 				DWORD PlayCursor;
@@ -635,17 +634,16 @@ WinMain(
 				LARGE_INTEGER EndCounter;
 				QueryPerformanceCounter(&EndCounter);
 
-				// TODO: Display the value here
 				uint64 CyclesElapsed = EndCycleCount - LastCycleCount;
 				int64 CounterElapsed = EndCounter.QuadPart - LastCounter.QuadPart;
 				real64 MSPerFrame = ((1000.0f * (real64)CounterElapsed) / (real64)PerfCountFrequency);
 				real64 FPS = ((real64)PerfCountFrequency / (real64)CounterElapsed);
 				real64 MCPF = ((real64)CyclesElapsed / (1000.0f * 1000.0f));
-
+#if 0
 				char Buffer[256];
 				sprintf(Buffer, "%.02fms/f, %.02ff/s, %.02fmc/f\n", MSPerFrame, FPS, MCPF); 
 				OutputDebugStringA(Buffer);
-
+#endif
 				LastCounter = EndCounter;
 				LastCycleCount = EndCycleCount;
 			}

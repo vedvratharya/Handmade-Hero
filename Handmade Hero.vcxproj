@@ -120,7 +120,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="code\handmade.cpp" />
     <ClCompile Include="code\win32_handmade.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="code\handmade.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
